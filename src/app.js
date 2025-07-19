@@ -1,13 +1,16 @@
 const express = require("express");
 require("dotenv").config();
 const { connectDB } = require("./config/db");
-const User = require("./models/user.model")
-const bcrypt = require("bcrypt");   
+const User = require("./models/user.model");
+const bcrypt = require("bcrypt");
+const cookieParser = require("cookie-parser");
+const jwt = require("jsonwebtoken");
+const { userAuth } = require("./middlewares/auth");
 
 const app = express();
 
-
 app.use(express.json());
+app.use(cookieParser());
 
 // Signup route
 app.post("/signup", async (req, res) => {
@@ -34,7 +37,6 @@ app.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
   try {
-
     const user = await User.findOne({ email: email });
     if (!user) {
       throw new Error("Invalid credentials");
@@ -42,10 +44,49 @@ app.post("/login", async (req, res) => {
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (isPasswordValid) {
+      // Generating JWT
+
+      const token = jwt.sign({ _id: user._id }, process.env.JWT_TOKEN);
+
+      // console.log(token);
+
+      res.cookie(token);
+
       res.send("Login successfully");
     } else {
       throw new Error("Invalid credentials");
     }
+  } catch (err) {
+    console.error(err);
+    res.status(400).send("Error: " + err.message);
+  }
+});
+
+app.get("/user/profile", userAuth, async (req, res) => {
+  try {
+    const cookie = req.cookies;
+
+    const { token } = cookie;
+
+    if (!token) {
+      throw new Error("Token not found");
+    }
+
+    const decodedMessage = await jwt.verify(token, process.env.JWT_TOKEN);
+
+    if (!decodedMessage) {
+      throw new Error("invalid token");
+    }
+
+    const { _id } = decodedMessage;
+    // console.log(token);
+
+    const user = await User.findById(_id);
+
+    if (!user) {
+      throw new Error("user not exits with this cookies");
+    }
+    res.send(user);
   } catch (err) {
     console.error(err);
     res.status(400).send("Error: " + err.message);
@@ -125,9 +166,8 @@ app.delete("/user/delete", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-connectDB()
- .then(()=>{
-    app.listen(PORT, () =>{
-    console.log(`server is running on port no ${PORT}`)
-    })
-})
+connectDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`server is running on port no ${PORT}`);
+  });
+});
